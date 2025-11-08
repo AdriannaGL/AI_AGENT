@@ -4,6 +4,7 @@ from google import genai
 import sys
 from google.genai import types
 from functions.function_calling import *
+from functions.call_function import *
 
 
 def main():
@@ -37,26 +38,42 @@ When a user asks a question or makes a request, make a function call plan. You c
 
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
 """
+execution_number = 0 
+while execution_number <=20:
+    execution_number += 1 
+    response = client.models.generate_content(
+        model='gemini-2.0-flash-001',
+        contents=messages,
+        config=types.GenerateContentConfig(tools=[available_functions], system_instruction=system_prompt),
 
-response = client.models.generate_content(
-    model='gemini-2.0-flash-001',
-    contents=messages,
-    config=types.GenerateContentConfig(tools=[available_functions], system_instruction=system_prompt),
-)
-calls = response.function_calls
+    )
+    check_candidates = response.candidates
+    for candidate in response.candidates:
+        messages.append(candidate.content)
+    calls = response.function_calls
 
-if len(sys.argv) >=3 and sys.argv[2] == "--verbose":
-    print(f"User prompt: {user_prompt}")
-    print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-    print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
-    #print(response.text)
+    verbose = False
+    if len(sys.argv) >=3 and sys.argv[2] == "--verbose":
+        verbose = True
+        print(f"User prompt: {user_prompt}")
+        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        
 
 
-if len(calls) > 0:
-    for function_call_part in calls:
-        print(f"Calling function: {function_call_part.name}({function_call_part.args}")
-
-else:
-    print(response.text)
+    if calls is not None and len(calls) > 0: #czy nie jest None
+        for function_call_part in calls:
+            print(f"Calling function: {function_call_part.name}({function_call_part.args}")
+            result = call_function(function_call_part, verbose=verbose)
+            try:
+                response = result.parts[0].function_response
+                messages.append(types.Content(role="user", parts=[types.Part(function_response=response)]))
+                if verbose == True:
+                    print(f"-> {response.response}")
+            except:
+                raise Exception("fatal error")
+    else:
+        print(response.text)
+        break #przerywa petle
 
 
